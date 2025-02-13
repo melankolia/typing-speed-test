@@ -53,7 +53,7 @@
       autofocus
     ></textarea>
 
-    <!-- Add Web3 connection button -->
+    <!-- Update the Web3 section in template -->
     <div class="web3-section">
       <button 
         @click="connectWallet" 
@@ -67,57 +67,39 @@
         </span>
       </button>
       
+      <!-- Pending Transactions Section -->
+      <div v-if="isConnected && pendingScores.length > 0" class="pending-scores">
+        <h3>⏳ Pending Transactions</h3>
+        <div class="scores-list">
+          <div v-for="score in pendingScores" 
+               :key="score.id" 
+               class="score-item pending-score"
+          >
+            <span class="score-address">Pending...</span>
+            <span>{{ score.wpm }} WPM</span>
+            <span>{{ score.accuracy }}%</span>
+            <span>{{ score.category }}</span>
+          </div>
+        </div>
+      </div>
+      
       <!-- High Scores Section -->
-      <div v-if="isConnected && (highScores.length || pendingScores.length > 0)" class="high-scores">
+      <div v-if="isConnected && highScores.length > 0" class="high-scores">
         <h3>🏆 High Scores</h3>
         <div class="scores-list">
           <div v-for="(score, index) in displayScores" 
                :key="index" 
-               :class="['score-item', { 'pending-score': score.isPending }]"
+               class="score-item"
           >
             <span class="score-address">
-              {{ score.isPending ? 'Pending...' : formatAddress(score.player) }}
+              {{ formatAddress(score.player) }}
             </span>
             <span>{{ score.wpm }} WPM</span>
             <span>{{ score.accuracy }}%</span>
             <span>{{ score.category }}</span>
-            <span 
-              v-if="score.isPending" 
-              class="pending-badge"
-            >
-              {{ pendingScores.length > 1 ? `Pending (${pendingScores.length})...` : 'Pending...' }}
-            </span>
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- Update results section -->
-    <div v-if="isComplete" class="results" role="status" aria-live="polite">
-      <p class="result">
-        🎉 Great job! Your results:
-        <br>
-        Speed: <strong>{{ wpm }} WPM</strong>
-        <br>
-        Accuracy: <strong>{{ accuracy }}%</strong>
-        <br>
-        <span v-if="isConnected" class="auto-save-text">
-          {{ pendingScores.length > 0 
-            ? `Saving scores... (${pendingScores.length} pending)` 
-            : 'Score will be saved automatically...' 
-          }}
-        </span>
-        <span v-else class="connect-wallet-text">
-          Connect wallet to save your score!
-        </span>
-      </p>
-      <button 
-        @click="restartTest" 
-        class="restart-btn"
-        aria-label="Start a new test"
-      >
-        🔄 Try Again
-      </button>
     </div>
 
     <!-- Add a loading spinner component -->
@@ -379,14 +361,7 @@ const saveScore = async () => {
 
 // Update displayScores computed property
 const displayScores = computed(() => {
-  // Get all scores and pending scores
-  const scores = [...highScores.value];
-  if (pendingScores.value.length > 0) {
-    scores.unshift(...pendingScores.value);
-  }
-  
-  // Sort scores by WPM in descending order and take top 50
-  return scores
+  return [...highScores.value]
     .sort((a, b) => b.wpm - a.wpm) // Sort by WPM
     .slice(0, 50); // Take top 50 scores
 });
@@ -765,5 +740,31 @@ const displayScores = computed(() => {
   color: #f1c40f;
   display: block;
   margin-top: 0.5rem;
+}
+
+/* Add to existing styles */
+.pending-scores {
+  margin: 2rem 0;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid #333;
+}
+
+.pending-scores h3,
+.high-scores h3 {
+  margin-bottom: 1rem;
+  color: #f1c40f;
+}
+
+.pending-score {
+  position: relative;
+  background: #2c3e50 !important;
+  border: 1px solid #f1c40f;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { border-color: #f1c40f; }
+  50% { border-color: #f39c12; }
+  100% { border-color: #f1c40f; }
 }
 </style>
