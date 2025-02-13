@@ -1,6 +1,6 @@
 <template>
   <div class="container" role="main">
-    <h1 class="title">🚀 Typing Speed Test</h1>
+    <h1 class="title">🚀 Typing Speed Game</h1>
     
     <div class="sentence-types">
       <button 
@@ -45,20 +45,21 @@
     <textarea 
       v-model="text" 
       @input="handleTyping" 
-      :disabled="isComplete" 
-      placeholder="Start typing here..."
+      :disabled="isComplete || !isConnected" 
+      :placeholder="isConnected ? 'Start typing here...' : 'Please connect wallet to start typing...'"
       class="typing-area"
+      :class="{ 'disabled': !isConnected }"
       aria-label="Type the text here"
       :aria-invalid="errorCount > 0"
       autofocus
     ></textarea>
 
-    <!-- Update the Web3 section in template -->
-    <div class="web3-section">
+    <!-- Add a connect prompt when not connected -->
+    <div v-if="!isConnected" class="connect-prompt">
+      <p>🦊 Connect your wallet to start playing!</p>
       <button 
         @click="connectWallet" 
         class="connect-btn"
-        v-if="!isConnected"
         :disabled="isConnecting"
       >
         <span class="connect-btn-content">
@@ -66,7 +67,10 @@
           {{ isConnecting ? 'Connecting...' : 'Connect Wallet' }}
         </span>
       </button>
-      
+    </div>
+
+    <!-- Update the Web3 section in template -->
+    <div class="web3-section">
       <!-- Pending Transactions Section -->
       <div v-if="isConnected && pendingScores.length > 0" class="pending-scores">
         <h3>⏳ Pending Transactions</h3>
@@ -766,5 +770,32 @@ const displayScores = computed(() => {
   0% { border-color: #f1c40f; }
   50% { border-color: #f39c12; }
   100% { border-color: #f1c40f; }
+}
+
+/* Add these styles */
+.typing-area.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #1a1a1a;
+}
+
+.connect-prompt {
+  margin: 2rem 0;
+  padding: 2rem;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #f1c40f;
+  text-align: center;
+}
+
+.connect-prompt p {
+  margin-bottom: 1rem;
+  color: #f1c40f;
+  font-size: 1.2em;
+}
+
+/* Move the connect button from web3-section to connect-prompt */
+.web3-section .connect-btn {
+  display: none;
 }
 </style>
