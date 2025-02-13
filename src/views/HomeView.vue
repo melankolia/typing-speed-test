@@ -61,11 +61,9 @@
         v-if="!isConnected"
         :disabled="isConnecting"
       >
-        <span v-if="isConnecting">
-          🔄 Connecting...
-        </span>
-        <span v-else>
-          🦊 Connect Wallet
+        <span class="connect-btn-content">
+          <span class="wallet-icon">{{ isConnecting ? '⏳' : '🦊' }}</span>
+          {{ isConnecting ? 'Connecting...' : 'Connect Wallet' }}
         </span>
       </button>
       
@@ -77,6 +75,9 @@
                :key="index" 
                :class="['score-item', { 'pending-score': score.isPending }]"
           >
+            <span class="score-address">
+              {{ score.isPending ? 'Pending...' : formatAddress(score.player) }}
+            </span>
             <span>{{ score.wpm }} WPM</span>
             <span>{{ score.accuracy }}%</span>
             <span>{{ score.category }}</span>
@@ -197,6 +198,12 @@ const showToast = (message, type = 'success') => {
 // Change pendingScore to pendingScores array
 const pendingScores = ref([]);
 
+// Add a helper function to format address
+const formatAddress = (address) => {
+  if (!address) return 'Unknown';
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+};
+
 // Update handleTyping function
 const handleTyping = () => {
   // Start timer on first character
@@ -292,7 +299,6 @@ onUnmounted(() => {
 });
 
 const restartTest = () => {
-  // Only reset game-related state, keep pending scores
   initializeTest();
   currentTime.value = Date.now();
 };
@@ -323,13 +329,13 @@ const loadHighScores = async () => {
   }
 };
 
-// Update saveScore function to handle multiple pending transactions
+// Update saveScore function
 const saveScore = async () => {
   if (isConnected.value && isComplete.value) {
     try {
       // Create new pending score
       const newPendingScore = {
-        id: Date.now(), // Unique ID for tracking
+        id: Date.now(),
         player: 'Pending...',
         wpm: wpm.value,
         accuracy: accuracy.value,
@@ -341,7 +347,10 @@ const saveScore = async () => {
       // Add to pending scores
       pendingScores.value.push(newPendingScore);
       
-      // Start new game immediately
+      // Wait 2 seconds before restarting to show final stats
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Start new game
       restartTest();
       
       // Save score in background
@@ -360,7 +369,6 @@ const saveScore = async () => {
       showToast('Score saved successfully! 🎉');
     } catch (error) {
       console.error('Error saving score:', error);
-      // Remove only the failed pending score
       pendingScores.value = pendingScores.value.filter(
         score => score.id !== newPendingScore.id
       );
@@ -371,12 +379,16 @@ const saveScore = async () => {
 
 // Update displayScores computed property
 const displayScores = computed(() => {
+  // Get all scores and pending scores
   const scores = [...highScores.value];
-  // Add all pending scores at the beginning
   if (pendingScores.value.length > 0) {
     scores.unshift(...pendingScores.value);
   }
-  return scores.slice(0, 5);
+  
+  // Sort scores by WPM in descending order and take top 50
+  return scores
+    .sort((a, b) => b.wpm - a.wpm) // Sort by WPM
+    .slice(0, 50); // Take top 50 scores
 });
 </script>
 
@@ -562,11 +574,41 @@ const displayScores = computed(() => {
   cursor: pointer;
   font-size: 1.1em;
   transition: all 0.3s ease;
+  min-width: 200px; /* Ensure consistent width */
 }
 
-.connect-btn:hover {
-  background: #27ae60;
-  transform: translateY(-2px);
+.connect-btn:disabled {
+  background: #1a8a4c;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.connect-btn-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.wallet-icon {
+  display: inline-block;
+  transition: opacity 0.3s ease;
+}
+
+/* Remove the rotating animation */
+.connect-btn:disabled span:first-child {
+  animation: none;
+}
+
+/* Optional: Add a subtle pulse animation for the connecting state */
+@keyframes subtle-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+.connect-btn:disabled .wallet-icon {
+  animation: subtle-pulse 1.5s infinite ease-in-out;
 }
 
 .high-scores {
@@ -578,14 +620,44 @@ const displayScores = computed(() => {
   flex-direction: column;
   gap: 0.5rem;
   margin-top: 1rem;
+  max-height: 400px; /* Limit height */
+  overflow-y: auto; /* Add scrolling */
+  padding-right: 10px; /* Space for scrollbar */
+}
+
+/* Add custom scrollbar styling */
+.scores-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scores-list::-webkit-scrollbar-track {
+  background: #1a1a1a;
+  border-radius: 4px;
+}
+
+.scores-list::-webkit-scrollbar-thumb {
+  background: #f1c40f;
+  border-radius: 4px;
+}
+
+.scores-list::-webkit-scrollbar-thumb:hover {
+  background: #f39c12;
 }
 
 .score-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.5rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 1rem;
+  padding: 0.8rem;
   background: #222;
   border-radius: 4px;
+  align-items: center;
+}
+
+.score-address {
+  font-family: 'JetBrains Mono', monospace;
+  color: #f1c40f;
+  font-size: 0.9em;
 }
 
 .save-score-btn {
@@ -636,24 +708,6 @@ const displayScores = computed(() => {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
-}
-
-/* Add loading animation for buttons */
-@keyframes rotating {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.connect-btn span,
-.save-score-btn span {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.connect-btn:disabled span:first-child,
-.save-score-btn:disabled span:first-child {
-  animation: rotating 2s linear infinite;
 }
 
 .fade-enter-active,
