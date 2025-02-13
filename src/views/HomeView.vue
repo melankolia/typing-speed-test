@@ -59,21 +59,33 @@
         @click="connectWallet" 
         class="connect-btn"
         v-if="!isConnected"
+        :disabled="isConnecting"
       >
-        🦊 Connect Wallet
+        <span v-if="isConnecting">
+          🔄 Connecting...
+        </span>
+        <span v-else>
+          🦊 Connect Wallet
+        </span>
       </button>
       
       <!-- High Scores Section -->
-      <div v-if="isConnected && highScores.length" class="high-scores">
+      <div v-if="isConnected && (highScores.length || pendingScores.length > 0)" class="high-scores">
         <h3>🏆 High Scores</h3>
         <div class="scores-list">
-          <div v-for="(score, index) in highScores.slice(0, 5)" 
+          <div v-for="(score, index) in displayScores" 
                :key="index" 
-               class="score-item"
+               :class="['score-item', { 'pending-score': score.isPending }]"
           >
             <span>{{ score.wpm }} WPM</span>
             <span>{{ score.accuracy }}%</span>
             <span>{{ score.category }}</span>
+            <span 
+              v-if="score.isPending" 
+              class="pending-badge"
+            >
+              {{ pendingScores.length > 1 ? `Pending (${pendingScores.length})...` : 'Pending...' }}
+            </span>
           </div>
         </div>
       </div>
@@ -87,6 +99,16 @@
         Speed: <strong>{{ wpm }} WPM</strong>
         <br>
         Accuracy: <strong>{{ accuracy }}%</strong>
+        <br>
+        <span v-if="isConnected" class="auto-save-text">
+          {{ pendingScores.length > 0 
+            ? `Saving scores... (${pendingScores.length} pending)` 
+            : 'Score will be saved automatically...' 
+          }}
+        </span>
+        <span v-else class="connect-wallet-text">
+          Connect wallet to save your score!
+        </span>
       </p>
       <button 
         @click="restartTest" 
@@ -95,20 +117,28 @@
       >
         🔄 Try Again
       </button>
-      <button 
-        v-if="isConnected"
-        @click="saveScore" 
-        class="save-score-btn"
-      >
-        💾 Save Score to Blockchain
-      </button>
     </div>
+
+    <!-- Add a loading spinner component -->
+    <div v-if="isSaving" class="loading-overlay">
+      <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Add toast notification -->
+    <Transition name="fade">
+      <ToastNotification
+        v-if="toast"
+        :message="toast.message"
+        :type="toast.type"
+      />
+    </Transition>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch, onUnmounted } from "vue";
 import { web3Service } from '@/services/web3Service';
+import ToastNotification from '@/components/ToastNotification.vue';
 
 // Move sentences to a separate config file
 import { sentences, getNewSentence, getSentenceByType } from '@/config/sentences';
@@ -152,6 +182,21 @@ const sentenceType = ref('default'); // Can be 'default', 'quote', 'programming'
 const isConnected = ref(false);
 const highScores = ref([]);
 
+// Add loading states
+const isSaving = ref(false);
+const isConnecting = ref(false);
+
+const toast = ref(null);
+const showToast = (message, type = 'success') => {
+  toast.value = { message, type };
+  setTimeout(() => {
+    toast.value = null;
+  }, 3000);
+};
+
+// Change pendingScore to pendingScores array
+const pendingScores = ref([]);
+
 // Update handleTyping function
 const handleTyping = () => {
   // Start timer on first character
@@ -159,9 +204,13 @@ const handleTyping = () => {
     startTime.value = Date.now();
   }
   
-  // Set end time if completed
+  // Set end time and auto-save if completed
   if (text.value === selectedSentence.value) {
     endTime.value = Date.now();
+    // Auto-save if connected to wallet
+    if (isConnected.value) {
+      saveScore();
+    }
   }
 
   // Track keystrokes and calculate accuracy
@@ -239,9 +288,11 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown);
   // Clear timer interval
   clearInterval(timerInterval);
+  pendingScores.value = []; // Clear any pending scores
 });
 
 const restartTest = () => {
+  // Only reset game-related state, keep pending scores
   initializeTest();
   currentTime.value = Date.now();
 };
@@ -255,11 +306,14 @@ const changeSentenceType = (type) => {
 // Add methods for Web3 interaction
 const connectWallet = async () => {
   try {
+    isConnecting.value = true;
     await web3Service.connect();
     isConnected.value = true;
     await loadHighScores();
   } catch (error) {
     console.error('Failed to connect wallet:', error);
+  } finally {
+    isConnecting.value = false;
   }
 };
 
@@ -269,16 +323,61 @@ const loadHighScores = async () => {
   }
 };
 
+// Update saveScore function to handle multiple pending transactions
 const saveScore = async () => {
   if (isConnected.value && isComplete.value) {
-    await web3Service.saveScore(
-      wpm.value,
-      accuracy.value,
-      sentenceType.value
-    );
-    await loadHighScores();
+    try {
+      // Create new pending score
+      const newPendingScore = {
+        id: Date.now(), // Unique ID for tracking
+        player: 'Pending...',
+        wpm: wpm.value,
+        accuracy: accuracy.value,
+        category: sentenceType.value,
+        timestamp: new Date(),
+        isPending: true
+      };
+      
+      // Add to pending scores
+      pendingScores.value.push(newPendingScore);
+      
+      // Start new game immediately
+      restartTest();
+      
+      // Save score in background
+      await web3Service.saveScore(
+        newPendingScore.wpm,
+        newPendingScore.accuracy,
+        newPendingScore.category
+      );
+      
+      // Remove this specific pending score
+      pendingScores.value = pendingScores.value.filter(
+        score => score.id !== newPendingScore.id
+      );
+      
+      await loadHighScores();
+      showToast('Score saved successfully! 🎉');
+    } catch (error) {
+      console.error('Error saving score:', error);
+      // Remove only the failed pending score
+      pendingScores.value = pendingScores.value.filter(
+        score => score.id !== newPendingScore.id
+      );
+      showToast('Failed to save score. Please try again.', 'error');
+    }
   }
 };
+
+// Update displayScores computed property
+const displayScores = computed(() => {
+  const scores = [...highScores.value];
+  // Add all pending scores at the beginning
+  if (pendingScores.value.length > 0) {
+    scores.unshift(...pendingScores.value);
+  }
+  return scores.slice(0, 5);
+});
 </script>
 
 <style scoped>
@@ -503,5 +602,114 @@ const saveScore = async () => {
 
 .save-score-btn:hover {
   background: #2980b9;
+}
+
+/* Add these styles */
+.connect-btn:disabled,
+.save-score-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid #f3f3f3;
+  border-top: 5px solid #f1c40f;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Add loading animation for buttons */
+@keyframes rotating {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.connect-btn span,
+.save-score-btn span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.connect-btn:disabled span:first-child,
+.save-score-btn:disabled span:first-child {
+  animation: rotating 2s linear infinite;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Update pending score styles */
+.pending-score {
+  position: relative;
+  opacity: 0.8;
+  background: #2c3e50 !important;
+  border: 1px solid #f1c40f;
+  transition: all 0.3s ease;
+}
+
+.pending-score:not(:first-child) {
+  opacity: 0.6;
+}
+
+.pending-badge {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  background: #f1c40f;
+  color: #2c3e50;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: bold;
+  animation: pulse 1.5s infinite;
+  white-space: nowrap;
+}
+
+/* Update auto-save text for multiple pending */
+.auto-save-text {
+  font-size: 0.9em;
+  color: #2ecc71;
+  display: block;
+  margin-top: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.auto-save-text:has(+ .pending-count) {
+  color: #f1c40f;
+}
+
+.connect-wallet-text {
+  font-size: 0.9em;
+  color: #f1c40f;
+  display: block;
+  margin-top: 0.5rem;
 }
 </style>

@@ -11,6 +11,7 @@
   "dependencies": {
     "@faker-js/faker": "^9.5.0",
     "@wagmi/core": "^2.16.4",
+    "@web3modal/wagmi": "^5.1.11",
     "ethers": "^6.13.5",
     "pinia": "^2.3.1",
     "vue": "^3.5.13",
