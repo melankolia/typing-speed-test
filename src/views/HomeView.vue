@@ -2,6 +2,18 @@
   <div class="container" role="main">
     <h1 class="title">🚀 Typing Speed Test</h1>
     
+    <div class="sentence-types">
+      <button 
+        v-for="type in ['default', 'quote', 'programming', 'business']" 
+        :key="type"
+        @click="changeSentenceType(type)"
+        :class="{ active: sentenceType === type }"
+        class="type-btn"
+      >
+        {{ type.charAt(0).toUpperCase() + type.slice(1) }}
+      </button>
+    </div>
+    
     <div class="stats" aria-live="polite">
       <div class="stat-item">
         <span class="stat-label">WPM:</span>
@@ -41,6 +53,33 @@
       autofocus
     ></textarea>
 
+    <!-- Add Web3 connection button -->
+    <div class="web3-section">
+      <button 
+        @click="connectWallet" 
+        class="connect-btn"
+        v-if="!isConnected"
+      >
+        🦊 Connect Wallet
+      </button>
+      
+      <!-- High Scores Section -->
+      <div v-if="isConnected && highScores.length" class="high-scores">
+        <h3>🏆 High Scores</h3>
+        <div class="scores-list">
+          <div v-for="(score, index) in highScores.slice(0, 5)" 
+               :key="index" 
+               class="score-item"
+          >
+            <span>{{ score.wpm }} WPM</span>
+            <span>{{ score.accuracy }}%</span>
+            <span>{{ score.category }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Update results section -->
     <div v-if="isComplete" class="results" role="status" aria-live="polite">
       <p class="result">
         🎉 Great job! Your results:
@@ -56,15 +95,23 @@
       >
         🔄 Try Again
       </button>
+      <button 
+        v-if="isConnected"
+        @click="saveScore" 
+        class="save-score-btn"
+      >
+        💾 Save Score to Blockchain
+      </button>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch, onUnmounted } from "vue";
+import { web3Service } from '@/services/web3Service';
 
 // Move sentences to a separate config file
-import { sentences } from '@/config/sentences';
+import { sentences, getNewSentence, getSentenceByType } from '@/config/sentences';
 
 // Add more reactive state
 const text = ref("");
@@ -97,6 +144,13 @@ const getCharClass = (index) => {
 const totalKeystrokes = ref(0);
 const correctKeystrokes = ref(0);
 const totalAttemptedChars = ref(0);
+
+// Add sentence type state
+const sentenceType = ref('default'); // Can be 'default', 'quote', 'programming', 'business'
+
+// Add reactive state for Web3
+const isConnected = ref(false);
+const highScores = ref([]);
 
 // Update handleTyping function
 const handleTyping = () => {
@@ -142,7 +196,11 @@ const handleTyping = () => {
 
 // Update initializeTest function
 const initializeTest = () => {
-  selectedSentence.value = sentences[Math.floor(Math.random() * sentences.length)];
+  // Get a new sentence based on type
+  selectedSentence.value = sentenceType.value === 'default' 
+    ? getNewSentence()
+    : getSentenceByType(sentenceType.value);
+    
   text.value = "";
   startTime.value = null;
   endTime.value = null;
@@ -186,6 +244,40 @@ onUnmounted(() => {
 const restartTest = () => {
   initializeTest();
   currentTime.value = Date.now();
+};
+
+// Add sentence type selector
+const changeSentenceType = (type) => {
+  sentenceType.value = type;
+  restartTest();
+};
+
+// Add methods for Web3 interaction
+const connectWallet = async () => {
+  try {
+    await web3Service.connect();
+    isConnected.value = true;
+    await loadHighScores();
+  } catch (error) {
+    console.error('Failed to connect wallet:', error);
+  }
+};
+
+const loadHighScores = async () => {
+  if (isConnected.value) {
+    highScores.value = await web3Service.getHighScores();
+  }
+};
+
+const saveScore = async () => {
+  if (isConnected.value && isComplete.value) {
+    await web3Service.saveScore(
+      wpm.value,
+      accuracy.value,
+      sentenceType.value
+    );
+    await loadHighScores();
+  }
 };
 </script>
 
@@ -327,5 +419,89 @@ const restartTest = () => {
   .stat-item {
     min-width: 100px;
   }
+}
+
+.sentence-types {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.type-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  background: #222;
+  color: #f1c40f;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.type-btn:hover {
+  background: #333;
+}
+
+.type-btn.active {
+  background: #f1c40f;
+  color: #222;
+}
+
+/* Add Web3 styles */
+.web3-section {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid #333;
+}
+
+.connect-btn {
+  background: #2ecc71;
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1em;
+  transition: all 0.3s ease;
+}
+
+.connect-btn:hover {
+  background: #27ae60;
+  transform: translateY(-2px);
+}
+
+.high-scores {
+  margin-top: 2rem;
+}
+
+.scores-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.score-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem;
+  background: #222;
+  border-radius: 4px;
+}
+
+.save-score-btn {
+  margin-top: 1rem;
+  background: #3498db;
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1em;
+  transition: all 0.3s ease;
+}
+
+.save-score-btn:hover {
+  background: #2980b9;
 }
 </style>
